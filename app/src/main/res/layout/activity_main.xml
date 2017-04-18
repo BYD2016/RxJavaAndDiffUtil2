@@ -9,4 +9,5 @@
     app:spanCount="7"
     app:layoutManager="android.support.v7.widget.GridLayoutManager"
     tools:listitem="@layout/thing_item"
-    tools:context="se.hellsoft.diffutilandrxjava.MainActivity"/>
+    tools:context=".MainActivity"
+    />

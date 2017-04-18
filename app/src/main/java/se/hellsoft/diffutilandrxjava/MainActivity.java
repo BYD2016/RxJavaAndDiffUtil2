@@ -12,6 +12,7 @@ import android.view.ViewGroup;
 import android.widget.TextView;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
@@ -20,122 +21,124 @@ import io.reactivex.disposables.Disposable;
 import static io.reactivex.android.schedulers.AndroidSchedulers.mainThread;
 import static io.reactivex.schedulers.Schedulers.computation;
 
-public class MainActivity extends AppCompatActivity {
-  private MyAdapter adapter;
-  private Disposable disposable;
-
-  @Override
-  protected void onCreate(Bundle savedInstanceState) {
-    super.onCreate(savedInstanceState);
-    setContentView(R.layout.activity_main);
-  }
-
-  @Override
-  protected void onStart() {
-    super.onStart();
-
-    adapter = new MyAdapter();
-    RecyclerView recyclerView = (RecyclerView) findViewById(R.id.listOfThings);
-    recyclerView.setItemAnimator(new DefaultItemAnimator());
-    recyclerView.setAdapter(adapter);
-
-    List<Thing> emptyList = new ArrayList<>();
-    adapter.setThings(emptyList);
-    Pair<List<Thing>, DiffUtil.DiffResult> initialPair = Pair.create(emptyList, null);
-    disposable = ThingRepository
-        .latestThings(2, TimeUnit.SECONDS)
-        .scan(initialPair, (pair, next) -> {
-          MyDiffCallback callback = new MyDiffCallback(pair.first, next);
-          DiffUtil.DiffResult result = DiffUtil.calculateDiff(callback);
-          return Pair.create(next, result);
-        })
-        .skip(1)
-        .subscribeOn(computation())
-        .observeOn(mainThread())
-        .subscribe(listDiffResultPair -> {
-          adapter.setThings(listDiffResultPair.first);
-          listDiffResultPair.second.dispatchUpdatesTo(adapter);
-        });
-  }
-
-  @Override
-  protected void onStop() {
-    super.onStop();
-    disposable.dispose();
-  }
-
-  private static class MyAdapter extends RecyclerView.Adapter<ThingViewHolder> {
-    private List<Thing> things = new ArrayList<>(); // Start with empty list
+public final class MainActivity extends AppCompatActivity {
+    private MyAdapter adapter;
+    private Disposable disposable;
 
     @Override
-    public ThingViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
-      View view = LayoutInflater.from(parent.getContext())
-          .inflate(R.layout.thing_item, parent, false);
-      return new ThingViewHolder(view);
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
     }
 
     @Override
-    public void onBindViewHolder(ThingViewHolder holder, int position) {
-      Thing thing = things.get(position);
-      holder.bind(thing);
+    protected void onStart() {
+        super.onStart();
+
+        RecyclerView recyclerView = (RecyclerView) findViewById(R.id.listOfThings);
+        recyclerView.setItemAnimator(new DefaultItemAnimator());
+        adapter = new MyAdapter();
+        recyclerView.setAdapter(adapter);
+
+        List<Thing> emptyList = Collections.emptyList();
+        adapter.setThings(emptyList);
+
+        Pair<List<Thing>, DiffUtil.DiffResult> initialPair = Pair.create(emptyList, null);
+
+        disposable = ThingRepository
+                .latestThings(2, TimeUnit.SECONDS)
+                .scan(initialPair, (pair, news) -> {
+                    MyDiffCallback callback = new MyDiffCallback(pair.first, news);
+                    DiffUtil.DiffResult result = DiffUtil.calculateDiff(callback);
+                    return Pair.create(news, result);
+                })
+                .skip(1)
+                .subscribeOn(computation())
+                .observeOn(mainThread())
+                .subscribe(listDiffResultPair -> {
+                    adapter.setThings(listDiffResultPair.first);
+                    listDiffResultPair.second.dispatchUpdatesTo(adapter);
+                });
     }
 
     @Override
-    public int getItemCount() {
-      return things.size();
+    protected void onStop() {
+        disposable.dispose();
+        super.onStop();
     }
 
-    public void setThings(List<Thing> things) {
-      this.things = things;
-    }
-  }
+    private static final class MyAdapter extends RecyclerView.Adapter<ThingViewHolder> {
+        private List<Thing> things = new ArrayList<>(); // Start with empty list
 
-  private static class ThingViewHolder extends RecyclerView.ViewHolder {
+        @Override
+        public ThingViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
+            View view = LayoutInflater.from(parent.getContext())
+                    .inflate(R.layout.thing_item, parent, false);
+            return new ThingViewHolder(view);
+        }
 
-    private final TextView textView;
+        @Override
+        public void onBindViewHolder(ThingViewHolder holder, int position) {
+            Thing thing = things.get(position);
+            holder.bind(thing);
+        }
 
-    public ThingViewHolder(View itemView) {
-      super(itemView);
-      textView = (TextView) itemView.findViewById(R.id.text);
-    }
+        @Override
+        public int getItemCount() {
+            return things.size();
+        }
 
-    public void bind(Thing thing) {
-      itemView.setBackgroundColor(thing.getColor());
-      textView.setText(thing.getText());
-    }
-  }
-
-  private static class MyDiffCallback extends DiffUtil.Callback {
-    private List<Thing> current;
-    private List<Thing> next;
-
-    public MyDiffCallback(List<Thing> current, List<Thing> next) {
-      this.current = current;
-      this.next = next;
+        void setThings(List<Thing> things) {
+            this.things = things;
+        }
     }
 
-    @Override
-    public int getOldListSize() {
-      return current.size();
+    private static final class ThingViewHolder extends RecyclerView.ViewHolder {
+
+        private final TextView textView;
+
+        ThingViewHolder(View itemView) {
+            super(itemView);
+            textView = (TextView) itemView.findViewById(R.id.text);
+        }
+
+        void bind(Thing thing) {
+            itemView.setBackgroundColor(thing.getColor());
+            textView.setText(thing.getText());
+        }
     }
 
-    @Override
-    public int getNewListSize() {
-      return next.size();
-    }
+    private static class MyDiffCallback extends DiffUtil.Callback {
+        private List<Thing> mOlds;
+        private List<Thing> mNews;
 
-    @Override
-    public boolean areItemsTheSame(int oldItemPosition, int newItemPosition) {
-      Thing currentItem = current.get(oldItemPosition);
-      Thing nextItem = next.get(newItemPosition);
-      return currentItem.getId() == nextItem.getId();
-    }
+        MyDiffCallback(List<Thing> olds, List<Thing> news) {
+            this.mOlds = olds;
+            this.mNews = news;
+        }
 
-    @Override
-    public boolean areContentsTheSame(int oldItemPosition, int newItemPosition) {
-      Thing currentItem = current.get(oldItemPosition);
-      Thing nextItem = next.get(newItemPosition);
-      return currentItem.equals(nextItem);
+        @Override
+        public int getOldListSize() {
+            return mOlds.size();
+        }
+
+        @Override
+        public int getNewListSize() {
+            return mNews.size();
+        }
+
+        @Override
+        public boolean areItemsTheSame(int oldItemPosition, int newItemPosition) {
+            Thing oldItem = mOlds.get(oldItemPosition);
+            Thing newItem = mNews.get(newItemPosition);
+            return oldItem.getId() == newItem.getId();
+        }
+
+        @Override
+        public boolean areContentsTheSame(int oldItemPosition, int newItemPosition) {
+            Thing oldItem = mOlds.get(oldItemPosition);
+            Thing newItem = mNews.get(newItemPosition);
+            return oldItem.equals(newItem);
+        }
     }
-  }
 }
